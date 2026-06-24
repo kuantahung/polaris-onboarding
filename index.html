@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>倍安保險 — 報聘文件配置系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --teal: #0d9488;
+            --teal-light: #14b8a6;
+            --teal-dark: #0f766e;
+            --slate-bg: #0f172a;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Noto Sans TC', 'Inter', sans-serif;
+            background-color: #f1f5f9;
+            -webkit-tap-highlight-color: transparent;
+            min-height: 100svh;
+        }
+
+        /* ── 捲軸 ── */
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+
+        /* ── Checkbox 自訂 ── */
+        .cb-item {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 18px; height: 18px;
+            border: 2px solid #cbd5e1;
+            border-radius: 5px;
+            background: white;
+            cursor: pointer;
+            position: relative;
+            transition: border-color .15s, background .15s;
+            flex-shrink: 0;
+        }
+        .cb-item:checked {
+            background: var(--teal);
+            border-color: var(--teal);
+        }
+        .cb-item:checked::after {
+            content: '';
+            position: absolute;
+            left: 4px; top: 1px;
+            width: 6px; height: 10px;
+            border: 2px solid white;
+            border-top: none;
+            border-left: none;
+            transform: rotate(45deg);
+        }
+        .cb-item:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+        /* ── 列項 hover ── */
+        .doc-row { transition: background .15s; }
+        .doc-row:hover { background-color: #f8fafc; }
+
+        /* ── 主下載鈕 ── */
+        .btn-primary {
+            background: linear-gradient(135deg, var(--teal) 0%, #0891b2 100%);
+            transition: opacity .15s, transform .1s;
+        }
+        .btn-primary:hover:not(:disabled) { opacity: .92; }
+        .btn-primary:active:not(:disabled) { transform: scale(.98); }
+        .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+
+        /* ── 狀態 chip ── */
+        .chip { font-size: 10px; padding: 2px 8px; border-radius: 20px; white-space: nowrap; flex-shrink: 0; }
+        .chip-default  { background: #1e293b; color: #64748b; }
+        .chip-loading  { background: #0d3d38; color: #2dd4bf; animation: pulse 1.2s infinite; }
+        .chip-done     { background: #052e16; color: #4ade80; }
+
+        @keyframes pulse { 0%,100%{ opacity:1 } 50%{ opacity:.5 } }
+
+        /* ── 彈窗 ── */
+        .modal-bg { backdrop-filter: blur(4px); }
+
+        /* ── 進度條 ── */
+        #progress-bar { transition: width .4s ease; }
+
+        /* ── 分類標頭強調線 ── */
+        .cat-accent { width: 3px; height: 16px; background: var(--teal); border-radius: 2px; flex-shrink: 0; }
+    </style>
+</head>
+<body class="text-slate-800 antialiased flex flex-col">
+
+<!-- ═══════════════════════════════════════
+     彈窗：首次下載說明（依裝置顯示）
+═══════════════════════════════════════ -->
+<div id="tutorial-modal" class="hidden fixed inset-0 bg-slate-950/75 modal-bg z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm p-6 shadow-2xl border border-slate-100">
+        <div class="text-center">
+            <div id="modal-icon" class="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 text-xl bg-teal-50"></div>
+            <h3 id="modal-title" class="text-base font-bold text-slate-900"></h3>
+            <p id="modal-body" class="text-sm text-slate-500 mt-2 leading-relaxed"></p>
+        </div>
+        <button onclick="closeTutorial()"
+            class="btn-primary mt-5 w-full text-white text-sm font-semibold py-3.5 rounded-xl shadow">
+            確認，開始下載
+        </button>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     頂部導覽
+═══════════════════════════════════════ -->
+<header class="bg-slate-900 text-white shadow-lg">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+            <div class="bg-teal-500 text-slate-900 font-bold px-2.5 py-1 rounded text-[11px] tracking-widest">POLARIS</div>
+            <h1 class="text-sm sm:text-base font-semibold tracking-wide">報聘文件配置系統</h1>
+        </div>
+        <div class="flex items-center gap-1.5 text-[11px] text-teal-400 bg-teal-500/10 border border-teal-500/20 px-2.5 py-1 rounded-full">
+            <span class="w-1.5 h-1.5 bg-teal-400 rounded-full animate-pulse"></span>
+            手機全面支援
+        </div>
+    </div>
+</header>
+
+<!-- ═══════════════════════════════════════
+     主要內容
+═══════════════════════════════════════ -->
+<main class="flex-grow max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- ── 左側：文件選擇 ── -->
+    <section class="lg:col-span-7 space-y-4">
+
+        <!-- 分類一：基本文件 -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="px-4 sm:px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <h2 class="font-bold text-sm flex items-center gap-2">
+                    <span class="cat-accent"></span> 一、基本文件
+                </h2>
+                <div class="flex gap-4 text-xs">
+                    <button type="button" onclick="toggleCat('cat1',false)" class="text-slate-400 hover:text-slate-600">取消</button>
+                    <button type="button" onclick="toggleCat('cat1',true)"  class="text-teal-600 hover:text-teal-700 font-semibold">全選</button>
+                </div>
+            </div>
+            <div class="divide-y divide-slate-100 px-2 sm:px-3">
+                <label class="doc-row flex items-center justify-between py-3 px-2 rounded-lg cursor-pointer">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <input type="checkbox" class="cb-item" data-cat="cat1" value="倍安報聘申請書" data-url="https://drive.google.com/file/d/1bU9TkMSUDB3enH-hiy5CydlkG7mmPV-T/view?usp=drive_link">
+                        <span class="text-xs sm:text-sm font-medium text-slate-700 truncate">1. 倍安報聘申請書</span>
+                    </div>
+                    <span class="chip chip-default ml-3">必備</span>
+                </label>
+                <label class="doc-row flex items-center justify-between py-3 px-2 rounded-lg cursor-pointer">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <input type="checkbox" class="cb-item" data-cat="cat1" value="名片印製申請書" data-url="https://drive.google.com/file/d/10t6uokSlQGlRO2Bp1bhCpyD6IoS-SSnM/view?usp=drive_link">
+                        <span class="text-xs sm:text-sm font-medium text-slate-700 truncate">2. 名片印製申請書</span>
+                    </div>
+                    <span class="chip chip-default ml-3">行政</span>
+                </label>
+                <label class="doc-row flex items-center justify-between py-3 px-2 rounded-lg cursor-pointer">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <input type="checkbox" class="cb-item" data-cat="cat1" value="付費APP帳號申請異動書" data-url="https://drive.google.com/file/d/1qFb5NpgmcVRoBYTqO9qEluTJ5RtZt7BJ/view?usp=drive_link">
+                        <span class="text-xs sm:text-sm font-medium text-slate-700 truncate">3. 付費APP帳號申請異動書 <span class="text-slate-400 text-[11px] hidden sm:inline">(雄好分析、創時)</span></span>
+                    </div>
+                    <span class="chip chip-default ml-3">工具</span>
+                </label>
+                <label class="doc-row flex items-center justify-between py-3 px-2 rounded-lg cursor-pointer">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <input type="checkbox" class="cb-item" data-cat="cat1" value="明台產物-輔銷系統帳號聲明書" data-url="https://drive.google.com/file/d/135grrGGi55jPI6FjChzrPnzA8_gBjNS1/view?usp=drive_link">
+                        <span class="text-xs sm:text-sm font-medium text-slate-700 truncate">4. 明台產物-輔銷系統帳號聲明書</span>
+                    </div>
+                    <span class="chip ml-3" style="background:#431407;color:#fb923c;">選填</span>
+                </label>
+                <label class="doc-row flex items-center justify-between py-3 px-2 rounded-lg cursor-pointer">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <input type="checkbox" class="cb-item" data-cat="cat1" value="收費同意書" data-url="https://drive.google.com/file/d/1OFD68iRs2wdQINXKhxvub5ewB60bLoP0/view?usp=drive_link">
+                        <span class="text-xs sm:text-sm font-medium text-slate-700 truncate">5. 收費同意書</span>
+                    </div>
+                    <span class="chip chip-default ml-3">首次增員</span>
+                </label>
+                <label class="doc-row flex items-center justify-between py-3 px-2 rounded-lg cursor-pointer">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <input type="checkbox" class="cb-item" data-cat="cat1" value="承攬合約補充條款" data-url="https://drive.google.com/file/d/1OU3oPPTzIwyFkmPa7K3gQdW6AI6VmHWE/view?usp=drive_link">
+                        <span class="text-xs sm:text-sm font-medium text-slate-700 truncate">6. 承攬合約補充條款 <span class="text-slate-400 text-[11px] hidden sm:inline">(斜槓年度來佣)</span></span>
+                    </div>
+                    <span class="chip ml-3" style="background:#1e1b4b;color:#a5b4fc;">斜槓</span>
+                </label>
+                <label class="doc-row flex items-center justify-between py-3 px-2 rounded-lg cursor-pointer">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <input type="checkbox" class="cb-item" data-cat="cat1" value="預收款聲明書" data-url="https://drive.google.com/file/d/1uPqClgIp7tdJXHzInIf3FcYAdeOS296F/view?usp=drive_link">
+                        <span class="text-xs sm:text-sm font-medium text-slate-700 truncate">7. 預收款聲明書</span>
+                    </div>
+                    <span class="chip ml-3" style="background:#1e1b4b;color:#a5b4fc;">斜槓</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- 分類二：個人資格申請書 -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="px-4 sm:px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <h2 class="font-bold text-sm flex items-center gap-2">
+                    <span class="cat-accent"></span> 二、個人資格申請書
+                </h2>
+                <div class="flex gap-4 text-xs">
+                    <button type="button" onclick="toggleCat('cat2',false)" class="text-slate-400 hover:text-slate-600">取消</button>
+                    <button type="button" onclick="toggleCat('cat2',true)"  class="text-teal-600 hover:text-teal-700 font-semibold">全選</button>
+                </div>
+            </div>
+            <div class="divide-y divide-slate-100 px-2 sm:px-3">
+                <label class="doc-row flex items-center justify-between py-3 px-2 rounded-lg cursor-pointer">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <input type="checkbox" class="cb-item" data-cat="cat2" value="壽險資格登錄申請書" data-url="https://drive.google.com/file/d/1rEdSs17_Zz8jejUA3wF7s4snQsOTbVh4/view?usp=drive_link">
+                        <span class="text-xs sm:text-sm font-medium text-slate-700 truncate">1. 壽險資格登錄申請</span>
+                    </div>
+                    <span class="chip chip-default ml-3">資格</span>
+                </label>
+                <label class="doc-row flex items-center justify-between py-3 px-2 rounded-lg cursor-pointer">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <input type="checkbox" class="cb-item" data-cat="cat2" value="外幣資格登錄申請書" data-url="https://drive.google.com/file/d/160wa15bs90cLT6gx_hZ6OKK5Ji6tzPju/view?usp=drive_link">
+                        <span class="text-xs sm:text-sm font-medium text-slate-700 truncate">2. 外幣資格登錄申請</span>
+                    </div>
+                    <span class="chip chip-default ml-3">資格</span>
+                </label>
+                <label class="doc-row flex items-center justify-between py-3 px-2 rounded-lg cursor-pointer">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <input type="checkbox" class="cb-item" data-cat="cat2" value="投資型資格登錄申請書" data-url="https://drive.google.com/file/d/1tOCoGr2R7UFZH-8VJRyDEZlpiyCDYMEy/view?usp=drive_link">
+                        <span class="text-xs sm:text-sm font-medium text-slate-700 truncate">3. 投資型資格登錄申請</span>
+                    </div>
+                    <span class="chip chip-default ml-3">資格</span>
+                </label>
+                <label class="doc-row flex items-center justify-between py-3 px-2 rounded-lg cursor-pointer">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <input type="checkbox" class="cb-item" data-cat="cat2" value="產險資格登錄申請書" data-url="https://drive.google.com/file/d/15jrIIykZ-izezB_zlunBzBTynMglVfWE/view?usp=drive_link">
+                        <span class="text-xs sm:text-sm font-medium text-slate-700 truncate">4. 產險資格登錄申請</span>
+                    </div>
+                    <span class="chip chip-default ml-3">資格</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- 分類三：工會 -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="px-4 sm:px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <h2 class="font-bold text-sm flex items-center gap-2">
+                    <span class="cat-accent"></span> 三、是否需投保工會
+                </h2>
+                <div class="flex gap-4 text-xs">
+                    <button type="button" onclick="toggleCat('cat3',false)" class="text-slate-400 hover:text-slate-600">取消</button>
+                    <button type="button" onclick="toggleCat('cat3',true)"  class="text-teal-600 hover:text-teal-700 font-semibold">全選</button>
+                </div>
+            </div>
+            <div class="divide-y divide-slate-100 px-2 sm:px-3">
+                <label class="doc-row flex items-center justify-between py-3 px-2 rounded-lg cursor-pointer">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <input type="checkbox" class="cb-item" data-cat="cat3" value="工會入會申請書" data-url="https://drive.google.com/file/d/1koBSUt3D0pXfNQZ8aTBBDW2MJn-uYoKQ/view?usp=drive_link">
+                        <span class="text-xs sm:text-sm font-medium text-slate-700 truncate">1. 工會入會申請書</span>
+                    </div>
+                    <span class="chip chip-default ml-3">工會福利</span>
+                </label>
+                <label class="doc-row flex items-center justify-between py-3 px-2 rounded-lg cursor-pointer">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <input type="checkbox" class="cb-item" data-cat="cat3" value="工會團保申請書" data-url="https://drive.google.com/file/d/1z6LbwPPfVSQmb1TnYCUyS3-h0VSytM6D/view?usp=drive_link">
+                        <span class="text-xs sm:text-sm font-medium text-slate-700 truncate">2. 工會團保申請書</span>
+                    </div>
+                    <span class="chip chip-default ml-3">保障規劃</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- 底部按鈕 -->
+        <div class="flex gap-3 pt-1">
+            <button type="button" onclick="clearAll()"
+                class="w-1/3 bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-300 text-slate-600 font-medium py-3.5 rounded-xl text-xs sm:text-sm transition-colors">
+                清空重選
+            </button>
+            <button type="button" onclick="generatePack()"
+                class="btn-primary w-2/3 text-white font-bold py-3.5 rounded-xl text-xs sm:text-sm shadow-md">
+                確認配置文件
+            </button>
+        </div>
+    </section>
+
+    <!-- ── 右側：配置結果與下載 ── -->
+    <section class="lg:col-span-5">
+        <div class="bg-slate-900 text-white rounded-xl shadow-xl border border-slate-800 p-5 sm:p-6 lg:sticky lg:top-6 flex flex-col"
+             style="min-height: 480px; max-height: calc(100vh - 4rem);">
+
+            <!-- 右側標頭 -->
+            <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-800 flex-shrink-0">
+                <div>
+                    <h3 class="font-bold text-sm tracking-wide">已配置的報聘包</h3>
+                    <p class="text-[11px] text-slate-500 mt-0.5">勾選後點「確認配置文件」</p>
+                </div>
+                <span id="item-count"
+                    class="text-[11px] bg-teal-500/10 text-teal-400 border border-teal-500/20 px-2.5 py-0.5 rounded-full font-semibold">
+                    0 項已選
+                </span>
+            </div>
+
+            <!-- 文件清單 -->
+            <div id="preview-container" class="flex-grow overflow-y-auto custom-scrollbar mb-4 max-h-[40vh] lg:max-h-none">
+
+                <!-- 空白提示 -->
+                <div id="empty-state" class="h-full flex flex-col items-center justify-center text-center py-10 text-slate-600">
+                    <div class="text-3xl mb-3">📋</div>
+                    <p class="text-xs leading-relaxed">請先在左側勾選所需文件<br>再點選「確認配置文件」</p>
+                </div>
+
+                <!-- 生成清單 -->
+                <div id="list-content" class="hidden space-y-2">
+                    <p class="text-[11px] text-slate-500 font-medium tracking-wider mb-3">本次配置的文件</p>
+                    <div id="links-output" class="space-y-2"></div>
+                </div>
+            </div>
+
+            <!-- 進度條（下載中顯示） -->
+            <div id="progress-wrap" class="hidden mb-3 flex-shrink-0">
+                <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+                    <span>下載進度</span>
+                    <span id="progress-label">0 / 0</span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5">
+                    <div id="progress-bar" class="bg-teal-500 h-1.5 rounded-full" style="width:0%"></div>
+                </div>
+            </div>
+
+            <!-- 底部動作區 -->
+            <div class="border-t border-slate-800 pt-4 space-y-3 flex-shrink-0">
+                <button id="btn-download" onclick="triggerDownloadFlow()" disabled
+                    class="btn-primary w-full text-white font-bold py-4 rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg">
+                    <svg class="w-4 h-4 stroke-current" fill="none" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                    </svg>
+                    <span id="btn-text">一鍵下載所有勾選檔案</span>
+                </button>
+
+                <a href="https://drive.google.com/drive/folders/1iKU0n8D_tKqdC8niOr7wHPShEuQ10WXC?usp=drive_link"
+                   target="_blank"
+                   class="block bg-teal-950 border border-teal-700/60 hover:bg-teal-900 p-3.5 rounded-xl text-center transition-colors group">
+                    <span class="text-[11px] text-teal-400 block mb-0.5">找不到需要的文件？</span>
+                    <span class="text-xs text-white group-hover:text-teal-200 font-semibold inline-flex items-center gap-1">
+                        進入 Google Drive 完整文件庫 ↗
+                    </span>
+                </a>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="bg-white border-t border-slate-200 py-3 text-center text-[11px] text-slate-400">
+    &copy; <span id="year"></span> 倍安保險 團隊管理處 內部工具
+</footer>
+
+<!-- ═══════════════════════════════════════
+     JavaScript
+═══════════════════════════════════════ -->
+<script>
+/* ── 年份 ── */
+document.getElementById('year').textContent = new Date().getFullYear();
+
+/* ── 裝置偵測 ── */
+const isIOS     = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+const isAndroid = /Android/.test(navigator.userAgent);
+const isMobile  = isIOS || isAndroid;
+
+/* ── 即時勾選計數 ── */
+document.querySelectorAll('.cb-item').forEach(cb => {
+    cb.addEventListener('change', updateCount);
+});
+
+function updateCount() {
+    const n = document.querySelectorAll('.cb-item:checked').length;
+    document.getElementById('item-count').textContent = `${n} 項已選`;
+}
+
+/* ── 分類全選／取消 ── */
+function toggleCat(cat, status) {
+    document.querySelectorAll(`[data-cat="${cat}"]`).forEach(cb => cb.checked = status);
+    updateCount();
+}
+
+/* ── 清空 ── */
+function clearAll() {
+    document.querySelectorAll('.cb-item').forEach(cb => cb.checked = false);
+    updateCount();
+    document.getElementById('empty-state').classList.remove('hidden');
+    document.getElementById('list-content').classList.add('hidden');
+    document.getElementById('btn-download').disabled = true;
+    document.getElementById('progress-wrap').classList.add('hidden');
+}
+
+/* ── 取得已勾選項目 ── */
+function getSelected() {
+    return [...document.querySelectorAll('.cb-item:checked')].map(cb => ({
+        name: cb.value,
+        url:  cb.dataset.url
+    }));
+}
+
+/* ── 擷取 Drive File ID ── */
+function extractFileId(url) {
+    const m = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    return m ? m[1] : null;
+}
+
+/* ── 確認配置 ── */
+function generatePack() {
+    const items = getSelected();
+    const emptyState  = document.getElementById('empty-state');
+    const listContent = document.getElementById('list-content');
+    const linksOutput = document.getElementById('links-output');
+    const btnDownload = document.getElementById('btn-download');
+    const countLabel  = document.getElementById('item-count');
+
+    countLabel.textContent = `${items.length} 項已選`;
+
+    if (items.length === 0) {
+        emptyState.classList.remove('hidden');
+        listContent.classList.add('hidden');
+        btnDownload.disabled = true;
+        alert('請至少勾選一項報聘文件！');
+        return;
+    }
+
+    emptyState.classList.add('hidden');
+    listContent.classList.remove('hidden');
+    btnDownload.disabled = false;
+
+    /* 渲染文件清單 */
+    linksOutput.innerHTML = '';
+    items.forEach((item, idx) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between gap-2 bg-slate-800/80 border border-slate-700/40 px-3 py-2.5 rounded-lg';
+        row.innerHTML = `
+            <div class="flex items-center gap-2 min-w-0">
+                <span class="text-slate-500 text-[11px] font-mono shrink-0">${idx+1}</span>
+                <span class="text-slate-200 text-xs font-medium truncate">${item.name}</span>
+            </div>
+            <span id="status-${idx}" class="chip chip-default">待下載</span>
+        `;
+        linksOutput.appendChild(row);
+    });
+
+    /* 滾動到右側面板（手機） */
+    if (isMobile) {
+        document.getElementById('btn-download').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+/* ── 觸發下載流程（顯示說明彈窗） ── */
+function triggerDownloadFlow() {
+    const icon  = document.getElementById('modal-icon');
+    const title = document.getElementById('modal-title');
+    const body  = document.getElementById('modal-body');
+
+    if (isIOS) {
+        icon.textContent  = '📱';
+        title.textContent = 'iPhone 下載說明';
+        body.innerHTML    = `系統將逐一在新分頁開啟 Google Drive 預覽頁，<br>
+            請在每個分頁點右上角 <b>「⋯」→「下載」</b>，即可儲存至手機。<br><br>
+            <span class="text-teal-500 font-medium">提示：請允許瀏覽器開啟新分頁。</span>`;
+    } else if (isAndroid) {
+        icon.textContent  = '📲';
+        title.textContent = 'Android 下載說明';
+        body.innerHTML    = `系統將自動依序下載所有檔案。<br>
+            下載完成後，請至手機「下載」資料夾查看。`;
+    } else {
+        icon.textContent  = '💻';
+        title.textContent = '電腦端批次下載';
+        body.innerHTML    = `系統將依序下載所有勾選檔案，<br>
+            請注意瀏覽器是否允許多檔下載。`;
+    }
+
+    document.getElementById('tutorial-modal').classList.remove('hidden');
+}
+
+function closeTutorial() {
+    document.getElementById('tutorial-modal').classList.add('hidden');
+    executeDownloads();
+}
+
+/* ── 核心下載邏輯（依裝置分流） ── */
+function executeDownloads() {
+    const items      = getSelected();
+    if (!items.length) return;
+
+    const total      = items.length;
+    const btnDownload = document.getElementById('btn-download');
+    const btnText    = document.getElementById('btn-text');
+    const progressWrap = document.getElementById('progress-wrap');
+    const progressBar  = document.getElementById('progress-bar');
+    const progressLabel = document.getElementById('progress-label');
+
+    btnDownload.disabled = true;
+    progressWrap.classList.remove('hidden');
+
+    /* 間隔時間：iOS 開新分頁需要短一點，其餘 800ms */
+    const INTERVAL = isIOS ? 600 : 800;
+
+    items.forEach((item, idx) => {
+        setTimeout(() => {
+            /* 更新 UI */
+            btnText.textContent = `下載中 ${idx + 1} / ${total}...`;
+            progressLabel.textContent = `${idx + 1} / ${total}`;
+            progressBar.style.width = `${Math.round(((idx + 1) / total) * 100)}%`;
+
+            const statusEl = document.getElementById(`status-${idx}`);
+            if (statusEl) {
+                statusEl.textContent = '下載中';
+                statusEl.className   = 'chip chip-loading';
+            }
+
+            const fileId = extractFileId(item.url);
+
+            if (isIOS) {
+                /* iOS：開新分頁到 Drive 預覽（iframe 在 Safari 完全無效） */
+                window.open(item.url, '_blank');
+            } else if (fileId) {
+                /* Android / 桌機：隱藏 iframe 觸發直接下載 */
+                const directUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = directUrl;
+                document.body.appendChild(iframe);
+                setTimeout(() => iframe.remove(), 8000);
+            } else {
+                /* fallback：開新分頁 */
+                window.open(item.url, '_blank');
+            }
+
+            /* 標記完成（以時間推估，無法直接偵測跨域 iframe） */
+            const doneDelay = isIOS ? 200 : 3500;
+            setTimeout(() => {
+                if (statusEl) {
+                    statusEl.textContent = '✓ 完成';
+                    statusEl.className   = 'chip chip-done';
+                }
+            }, doneDelay);
+
+            /* 全部完成後恢復按鈕 */
+            if (idx === total - 1) {
+                setTimeout(() => {
+                    btnDownload.disabled = false;
+                    btnText.textContent  = '一鍵下載所有勾選檔案';
+                    progressWrap.classList.add('hidden');
+                    progressBar.style.width = '0%';
+
+                    if (isIOS) {
+                        alert(`已開啟 ${total} 個 Drive 預覽分頁。\n請在每個分頁點「⋯ → 下載」即可儲存。`);
+                    } else {
+                        alert(`已將 ${total} 個檔案加入下載佇列。\n請至「下載」資料夾查看。`);
+                    }
+                }, doneDelay + 600);
+            }
+
+        }, idx * INTERVAL);
+    });
+}
+</script>
+</body>
+</html>
