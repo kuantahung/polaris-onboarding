@@ -91,18 +91,47 @@
 <body class="text-slate-800 antialiased flex flex-col">
 
 <!-- ═══════════════════════════════════════
-     彈窗：首次下載說明（依裝置顯示）
+     逐一下載彈窗（手機 / 桌機通用）
 ═══════════════════════════════════════ -->
-<div id="tutorial-modal" class="hidden fixed inset-0 bg-slate-950/75 modal-bg z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-    <div class="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm p-6 shadow-2xl border border-slate-100">
-        <div class="text-center">
-            <div id="modal-icon" class="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 text-xl bg-teal-50"></div>
-            <h3 id="modal-title" class="text-base font-bold text-slate-900"></h3>
-            <p id="modal-body" class="text-sm text-slate-500 mt-2 leading-relaxed"></p>
+<div id="step-modal" class="hidden fixed inset-0 bg-slate-950/80 modal-bg z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm shadow-2xl overflow-hidden">
+        <div class="h-1 bg-slate-800">
+            <div id="step-progress-bar" class="h-1 bg-teal-500 transition-all duration-300" style="width:0%"></div>
         </div>
-        <button onclick="closeTutorial()"
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-4">
+                <span class="text-[11px] text-slate-500 font-medium tracking-wider">下載進度</span>
+                <span id="step-counter" class="text-[11px] text-teal-400 font-semibold bg-teal-500/10 px-2 py-0.5 rounded-full"></span>
+            </div>
+            <div class="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 mb-5 text-center">
+                <p class="text-[11px] text-slate-500 mb-1">目前下載</p>
+                <p id="step-filename" class="text-sm font-semibold text-white leading-snug"></p>
+            </div>
+            <!-- 真實 <a> 標籤，使用者直接點擊 → 瀏覽器視為合法手勢，不封鎖 -->
+            <a id="step-download-btn" href="#" target="_blank"
+               onclick="onStepClick(event)"
+               class="btn-primary flex items-center justify-center gap-2 w-full text-white font-bold py-4 rounded-xl text-sm text-center shadow-lg mb-3">
+                📥 點此下載這個檔案
+            </a>
+            <button type="button" onclick="advanceStep(false)"
+                class="w-full text-slate-500 hover:text-slate-300 text-xs py-2 transition-colors">
+                略過，繼續下一個 →
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     完成彈窗
+═══════════════════════════════════════ -->
+<div id="done-modal" class="hidden fixed inset-0 bg-slate-950/75 modal-bg z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm p-6 shadow-2xl text-center">
+        <div class="text-4xl mb-3">✅</div>
+        <h3 class="text-base font-bold text-slate-900">全部下載完成！</h3>
+        <p id="done-body" class="text-sm text-slate-500 mt-2 leading-relaxed"></p>
+        <button onclick="closeDoneModal()"
             class="btn-primary mt-5 w-full text-white text-sm font-semibold py-3.5 rounded-xl shadow">
-            確認，開始下載
+            關閉
         </button>
     </div>
 </div>
@@ -313,17 +342,6 @@
                 </div>
             </div>
 
-            <!-- 進度條（下載中顯示） -->
-            <div id="progress-wrap" class="hidden mb-3 flex-shrink-0">
-                <div class="flex justify-between text-[11px] text-slate-400 mb-1">
-                    <span>下載進度</span>
-                    <span id="progress-label">0 / 0</span>
-                </div>
-                <div class="w-full bg-slate-800 rounded-full h-1.5">
-                    <div id="progress-bar" class="bg-teal-500 h-1.5 rounded-full" style="width:0%"></div>
-                </div>
-            </div>
-
             <!-- 底部動作區 -->
             <div class="border-t border-slate-800 pt-4 space-y-3 flex-shrink-0">
                 <button id="btn-download" onclick="triggerDownloadFlow()" disabled
@@ -360,9 +378,13 @@
 document.getElementById('year').textContent = new Date().getFullYear();
 
 /* ── 裝置偵測 ── */
-const isIOS     = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-const isAndroid = /Android/.test(navigator.userAgent);
-const isMobile  = isIOS || isAndroid;
+const isIOS    = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+const isMobile = /Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+
+/* ── 下載佇列狀態 ── */
+let downloadQueue  = [];   // 待下載的項目陣列
+let currentStep    = 0;    // 當前指向的索引
+let downloadedCount = 0;  // 已點下載（非略過）的數量
 
 /* ── 即時勾選計數 ── */
 document.querySelectorAll('.cb-item').forEach(cb => {
@@ -404,6 +426,14 @@ function extractFileId(url) {
     return m ? m[1] : null;
 }
 
+/* ── 取得直接下載 URL ── */
+function getDownloadUrl(url) {
+    const fileId = extractFileId(url);
+    return fileId
+        ? `https://docs.google.com/uc?export=download&id=${fileId}`
+        : url;
+}
+
 /* ── 確認配置 ── */
 function generatePack() {
     const items = getSelected();
@@ -411,9 +441,8 @@ function generatePack() {
     const listContent = document.getElementById('list-content');
     const linksOutput = document.getElementById('links-output');
     const btnDownload = document.getElementById('btn-download');
-    const countLabel  = document.getElementById('item-count');
 
-    countLabel.textContent = `${items.length} 項已選`;
+    document.getElementById('item-count').textContent = `${items.length} 項已選`;
 
     if (items.length === 0) {
         emptyState.classList.remove('hidden');
@@ -427,14 +456,13 @@ function generatePack() {
     listContent.classList.remove('hidden');
     btnDownload.disabled = false;
 
-    /* 渲染文件清單 */
     linksOutput.innerHTML = '';
     items.forEach((item, idx) => {
         const row = document.createElement('div');
         row.className = 'flex items-center justify-between gap-2 bg-slate-800/80 border border-slate-700/40 px-3 py-2.5 rounded-lg';
         row.innerHTML = `
             <div class="flex items-center gap-2 min-w-0">
-                <span class="text-slate-500 text-[11px] font-mono shrink-0">${idx+1}</span>
+                <span class="text-slate-500 text-[11px] font-mono shrink-0">${idx + 1}</span>
                 <span class="text-slate-200 text-xs font-medium truncate">${item.name}</span>
             </div>
             <span id="status-${idx}" class="chip chip-default">待下載</span>
@@ -442,163 +470,94 @@ function generatePack() {
         linksOutput.appendChild(row);
     });
 
-    /* 滾動到右側面板（手機） */
     if (isMobile) {
         document.getElementById('btn-download').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 }
 
-/* ── 觸發下載流程（顯示說明彈窗） ── */
+/* ════════════════════════════════════════
+   逐一下載流程
+════════════════════════════════════════ */
+
+/* 入口：點「一鍵下載」按鈕 */
 function triggerDownloadFlow() {
-    const icon  = document.getElementById('modal-icon');
-    const title = document.getElementById('modal-title');
-    const body  = document.getElementById('modal-body');
-
-    if (isIOS) {
-        icon.textContent  = '📱';
-        title.textContent = 'iPhone 下載說明';
-        body.innerHTML    = `系統將逐一在新分頁開啟 Google Drive 預覽頁，<br>
-            請在每個分頁點右上角 <b>「⋯」→「下載」</b>，即可儲存至手機。<br><br>
-            <span class="text-teal-500 font-medium">提示：請允許瀏覽器開啟新分頁。</span>`;
-    } else if (isAndroid) {
-        icon.textContent  = '📲';
-        title.textContent = 'Android 下載說明';
-        body.innerHTML    = `系統將逐一下載每個檔案，每個檔案抓取完畢後才繼續下一個。<br><br>
-            <span class="text-teal-500 font-medium">下載完成後請至手機「下載」資料夾查看。</span>`;
-    } else {
-        icon.textContent  = '💻';
-        title.textContent = '電腦端批次下載';
-        body.innerHTML    = `系統將依序下載所有勾選檔案，<br>
-            請確認瀏覽器已允許多檔下載。`;
-    }
-
-    document.getElementById('tutorial-modal').classList.remove('hidden');
+    downloadQueue   = getSelected();
+    currentStep     = 0;
+    downloadedCount = 0;
+    if (!downloadQueue.length) return;
+    showStep(0);
 }
 
-function closeTutorial() {
-    document.getElementById('tutorial-modal').classList.add('hidden');
-    executeDownloads();
+/* 顯示第 idx 個檔案的彈窗 */
+function showStep(idx) {
+    const item  = downloadQueue[idx];
+    const total = downloadQueue.length;
+
+    /* 進度 */
+    document.getElementById('step-counter').textContent     = `${idx + 1} / ${total}`;
+    document.getElementById('step-progress-bar').style.width = `${Math.round(((idx + 1) / total) * 100)}%`;
+    document.getElementById('step-filename').textContent    = item.name;
+
+    /* 設定下載連結 */
+    const dlBtn = document.getElementById('step-download-btn');
+    dlBtn.href = getDownloadUrl(item.url);
+
+    /* 更新右側清單狀態 */
+    const statusEl = document.getElementById(`status-${idx}`);
+    if (statusEl) { statusEl.textContent = '⬇ 待點擊'; statusEl.className = 'chip chip-loading'; }
+
+    document.getElementById('step-modal').classList.remove('hidden');
 }
 
-/* ── 用 fetch → Blob → <a download> 下載單一檔案（Android / 桌機用）── */
-async function fetchAndDownload(fileId, filename, statusEl) {
-    const directUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
-
-    /* Step 1：fetch 取得檔案（跟隨 Drive 的重定向） */
-    let response = await fetch(directUrl, { redirect: 'follow' });
-
-    /* Step 2：Drive 大檔案會先回傳確認頁，需要帶 confirm 參數再打一次 */
-    if (response.headers.get('content-type')?.includes('text/html')) {
-        const html = await response.text();
-        const confirmMatch = html.match(/confirm=([0-9A-Za-z_]+)/);
-        if (confirmMatch) {
-            const confirmUrl = `${directUrl}&confirm=${confirmMatch[1]}`;
-            response = await fetch(confirmUrl, { redirect: 'follow' });
-        } else {
-            /* 找不到 confirm token，fallback 開新分頁 */
-            window.open(directUrl, '_blank');
-            if (statusEl) { statusEl.textContent = '✓ 完成'; statusEl.className = 'chip chip-done'; }
-            return;
-        }
-    }
-
-    /* Step 3：取 Blob 並建立物件 URL，用 <a download> 觸發儲存 */
-    const blob = await response.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = filename + '.pdf';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-
-    /* 釋放記憶體 */
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-
+/* 使用者點了「📥 點此下載這個檔案」 */
+function onStepClick(e) {
+    /* 讓 <a href target="_blank"> 自然執行（真實使用者手勢，瀏覽器不封鎖） */
+    downloadedCount++;
+    const statusEl = document.getElementById(`status-${currentStep}`);
     if (statusEl) { statusEl.textContent = '✓ 完成'; statusEl.className = 'chip chip-done'; }
+
+    /* 短暫延遲讓下載觸發後再跳下一個 */
+    setTimeout(() => advanceStep(true), 400);
 }
 
-/* ── 核心下載邏輯（依裝置分流） ── */
-async function executeDownloads() {
-    const items = getSelected();
-    if (!items.length) return;
-
-    const total         = items.length;
-    const btnDownload   = document.getElementById('btn-download');
-    const btnText       = document.getElementById('btn-text');
-    const progressWrap  = document.getElementById('progress-wrap');
-    const progressBar   = document.getElementById('progress-bar');
-    const progressLabel = document.getElementById('progress-label');
-
-    btnDownload.disabled = true;
-    progressWrap.classList.remove('hidden');
-
-    if (isIOS) {
-        /* ── iOS：逐一開新分頁，間隔 600ms ── */
-        for (let idx = 0; idx < total; idx++) {
-            const item     = items[idx];
-            const statusEl = document.getElementById(`status-${idx}`);
-
-            btnText.textContent       = `開啟分頁 ${idx + 1} / ${total}...`;
-            progressLabel.textContent = `${idx + 1} / ${total}`;
-            progressBar.style.width   = `${Math.round(((idx + 1) / total) * 100)}%`;
-            if (statusEl) { statusEl.textContent = '開啟中'; statusEl.className = 'chip chip-loading'; }
-
-            window.open(item.url, '_blank');
-
-            setTimeout(() => {
-                if (statusEl) { statusEl.textContent = '✓ 完成'; statusEl.className = 'chip chip-done'; }
-            }, 300);
-
-            await sleep(600);
-        }
-
-    } else {
-        /* ── Android / 桌機：fetch → Blob 串行佇列，一個完成才下一個 ── */
-        for (let idx = 0; idx < total; idx++) {
-            const item     = items[idx];
-            const fileId   = extractFileId(item.url);
-            const statusEl = document.getElementById(`status-${idx}`);
-
-            btnText.textContent       = `下載中 ${idx + 1} / ${total}...`;
-            progressLabel.textContent = `${idx + 1} / ${total}`;
-            progressBar.style.width   = `${Math.round(((idx + 1) / total) * 100)}%`;
-            if (statusEl) { statusEl.textContent = '下載中'; statusEl.className = 'chip chip-loading'; }
-
-            try {
-                if (fileId) {
-                    await fetchAndDownload(fileId, item.name, statusEl);
-                } else {
-                    window.open(item.url, '_blank');
-                    if (statusEl) { statusEl.textContent = '✓ 完成'; statusEl.className = 'chip chip-done'; }
-                }
-            } catch (err) {
-                console.warn('下載失敗，fallback 開新分頁：', item.name, err);
-                window.open(item.url, '_blank');
-                if (statusEl) { statusEl.textContent = '⚠ 另頁開啟'; statusEl.className = 'chip'; statusEl.style.cssText = 'background:#431407;color:#fb923c;'; }
-            }
-
-            /* 每個檔案之間暫停 400ms，讓瀏覽器完成儲存動作 */
-            if (idx < total - 1) await sleep(400);
-        }
+/* 前進到下一步（downloaded = 是否有點下載） */
+function advanceStep(downloaded) {
+    /* 若是略過且尚未標記完成，標記為略過 */
+    if (!downloaded) {
+        const statusEl = document.getElementById(`status-${currentStep}`);
+        if (statusEl) { statusEl.textContent = '—略過'; statusEl.className = 'chip chip-default'; }
     }
 
-    /* ── 全部完成 ── */
-    btnDownload.disabled      = false;
-    btnText.textContent       = '一鍵下載所有勾選檔案';
-    progressWrap.classList.add('hidden');
-    progressBar.style.width   = '0%';
+    currentStep++;
 
-    if (isIOS) {
-        alert(`已開啟 ${total} 個 Drive 預覽分頁。\n請在每個分頁點「⋯ → 下載」即可儲存。`);
+    if (currentStep < downloadQueue.length) {
+        showStep(currentStep);
     } else {
-        alert(`✅ 已完成下載 ${total} 個檔案！\n請至「下載」資料夾查看。`);
+        /* 全部跑完 */
+        document.getElementById('step-modal').classList.add('hidden');
+        showDone();
     }
 }
 
-/* ── 工具：Promise 版 sleep ── */
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+/* 完成彈窗 */
+function showDone() {
+    const total   = downloadQueue.length;
+    const skipped = total - downloadedCount;
+    let msg = `共 ${total} 個檔案，已點擊下載 ${downloadedCount} 個。`;
+    if (skipped > 0) msg += `\n（${skipped} 個略過）`;
+    if (isIOS) msg += `\n\niPhone 用戶：檔案會透過 Safari 下載，請至「檔案 App → 下載項目」查看。`;
+    else       msg += `\n\n請至裝置「下載」資料夾查看。`;
+
+    document.getElementById('done-body').textContent = msg;
+    document.getElementById('done-modal').classList.remove('hidden');
+
+    /* 更新右側主下載鈕文字 */
+    document.getElementById('btn-text').textContent = '一鍵下載所有勾選檔案';
+    document.getElementById('btn-download').disabled = false;
+}
+
+function closeDoneModal() {
+    document.getElementById('done-modal').classList.add('hidden');
 }
 </script>
 </body>
