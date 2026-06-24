@@ -463,13 +463,13 @@ function triggerDownloadFlow() {
     } else if (isAndroid) {
         icon.textContent  = '📲';
         title.textContent = 'Android 下載說明';
-        body.innerHTML    = `系統將自動依序下載所有檔案。<br>
-            下載完成後，請至手機「下載」資料夾查看。`;
+        body.innerHTML    = `系統將逐一下載每個檔案，每個檔案抓取完畢後才繼續下一個。<br><br>
+            <span class="text-teal-500 font-medium">下載完成後請至手機「下載」資料夾查看。</span>`;
     } else {
         icon.textContent  = '💻';
         title.textContent = '電腦端批次下載';
         body.innerHTML    = `系統將依序下載所有勾選檔案，<br>
-            請注意瀏覽器是否允許多檔下載。`;
+            請確認瀏覽器已允許多檔下載。`;
     }
 
     document.getElementById('tutorial-modal').classList.remove('hidden');
@@ -480,82 +480,125 @@ function closeTutorial() {
     executeDownloads();
 }
 
+/* ── 用 fetch → Blob → <a download> 下載單一檔案（Android / 桌機用）── */
+async function fetchAndDownload(fileId, filename, statusEl) {
+    const directUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
+
+    /* Step 1：fetch 取得檔案（跟隨 Drive 的重定向） */
+    let response = await fetch(directUrl, { redirect: 'follow' });
+
+    /* Step 2：Drive 大檔案會先回傳確認頁，需要帶 confirm 參數再打一次 */
+    if (response.headers.get('content-type')?.includes('text/html')) {
+        const html = await response.text();
+        const confirmMatch = html.match(/confirm=([0-9A-Za-z_]+)/);
+        if (confirmMatch) {
+            const confirmUrl = `${directUrl}&confirm=${confirmMatch[1]}`;
+            response = await fetch(confirmUrl, { redirect: 'follow' });
+        } else {
+            /* 找不到 confirm token，fallback 開新分頁 */
+            window.open(directUrl, '_blank');
+            if (statusEl) { statusEl.textContent = '✓ 完成'; statusEl.className = 'chip chip-done'; }
+            return;
+        }
+    }
+
+    /* Step 3：取 Blob 並建立物件 URL，用 <a download> 觸發儲存 */
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename + '.pdf';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    /* 釋放記憶體 */
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+
+    if (statusEl) { statusEl.textContent = '✓ 完成'; statusEl.className = 'chip chip-done'; }
+}
+
 /* ── 核心下載邏輯（依裝置分流） ── */
-function executeDownloads() {
-    const items      = getSelected();
+async function executeDownloads() {
+    const items = getSelected();
     if (!items.length) return;
 
-    const total      = items.length;
-    const btnDownload = document.getElementById('btn-download');
-    const btnText    = document.getElementById('btn-text');
-    const progressWrap = document.getElementById('progress-wrap');
-    const progressBar  = document.getElementById('progress-bar');
+    const total         = items.length;
+    const btnDownload   = document.getElementById('btn-download');
+    const btnText       = document.getElementById('btn-text');
+    const progressWrap  = document.getElementById('progress-wrap');
+    const progressBar   = document.getElementById('progress-bar');
     const progressLabel = document.getElementById('progress-label');
 
     btnDownload.disabled = true;
     progressWrap.classList.remove('hidden');
 
-    /* 間隔時間：iOS 開新分頁需要短一點，其餘 800ms */
-    const INTERVAL = isIOS ? 600 : 800;
-
-    items.forEach((item, idx) => {
-        setTimeout(() => {
-            /* 更新 UI */
-            btnText.textContent = `下載中 ${idx + 1} / ${total}...`;
-            progressLabel.textContent = `${idx + 1} / ${total}`;
-            progressBar.style.width = `${Math.round(((idx + 1) / total) * 100)}%`;
-
+    if (isIOS) {
+        /* ── iOS：逐一開新分頁，間隔 600ms ── */
+        for (let idx = 0; idx < total; idx++) {
+            const item     = items[idx];
             const statusEl = document.getElementById(`status-${idx}`);
-            if (statusEl) {
-                statusEl.textContent = '下載中';
-                statusEl.className   = 'chip chip-loading';
-            }
 
-            const fileId = extractFileId(item.url);
+            btnText.textContent       = `開啟分頁 ${idx + 1} / ${total}...`;
+            progressLabel.textContent = `${idx + 1} / ${total}`;
+            progressBar.style.width   = `${Math.round(((idx + 1) / total) * 100)}%`;
+            if (statusEl) { statusEl.textContent = '開啟中'; statusEl.className = 'chip chip-loading'; }
 
-            if (isIOS) {
-                /* iOS：開新分頁到 Drive 預覽（iframe 在 Safari 完全無效） */
-                window.open(item.url, '_blank');
-            } else if (fileId) {
-                /* Android / 桌機：隱藏 iframe 觸發直接下載 */
-                const directUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                iframe.src = directUrl;
-                document.body.appendChild(iframe);
-                setTimeout(() => iframe.remove(), 8000);
-            } else {
-                /* fallback：開新分頁 */
-                window.open(item.url, '_blank');
-            }
+            window.open(item.url, '_blank');
 
-            /* 標記完成（以時間推估，無法直接偵測跨域 iframe） */
-            const doneDelay = isIOS ? 200 : 3500;
             setTimeout(() => {
-                if (statusEl) {
-                    statusEl.textContent = '✓ 完成';
-                    statusEl.className   = 'chip chip-done';
+                if (statusEl) { statusEl.textContent = '✓ 完成'; statusEl.className = 'chip chip-done'; }
+            }, 300);
+
+            await sleep(600);
+        }
+
+    } else {
+        /* ── Android / 桌機：fetch → Blob 串行佇列，一個完成才下一個 ── */
+        for (let idx = 0; idx < total; idx++) {
+            const item     = items[idx];
+            const fileId   = extractFileId(item.url);
+            const statusEl = document.getElementById(`status-${idx}`);
+
+            btnText.textContent       = `下載中 ${idx + 1} / ${total}...`;
+            progressLabel.textContent = `${idx + 1} / ${total}`;
+            progressBar.style.width   = `${Math.round(((idx + 1) / total) * 100)}%`;
+            if (statusEl) { statusEl.textContent = '下載中'; statusEl.className = 'chip chip-loading'; }
+
+            try {
+                if (fileId) {
+                    await fetchAndDownload(fileId, item.name, statusEl);
+                } else {
+                    window.open(item.url, '_blank');
+                    if (statusEl) { statusEl.textContent = '✓ 完成'; statusEl.className = 'chip chip-done'; }
                 }
-            }, doneDelay);
-
-            /* 全部完成後恢復按鈕 */
-            if (idx === total - 1) {
-                setTimeout(() => {
-                    btnDownload.disabled = false;
-                    btnText.textContent  = '一鍵下載所有勾選檔案';
-                    progressWrap.classList.add('hidden');
-                    progressBar.style.width = '0%';
-
-                    if (isIOS) {
-                        alert(`已開啟 ${total} 個 Drive 預覽分頁。\n請在每個分頁點「⋯ → 下載」即可儲存。`);
-                    } else {
-                        alert(`已將 ${total} 個檔案加入下載佇列。\n請至「下載」資料夾查看。`);
-                    }
-                }, doneDelay + 600);
+            } catch (err) {
+                console.warn('下載失敗，fallback 開新分頁：', item.name, err);
+                window.open(item.url, '_blank');
+                if (statusEl) { statusEl.textContent = '⚠ 另頁開啟'; statusEl.className = 'chip'; statusEl.style.cssText = 'background:#431407;color:#fb923c;'; }
             }
 
-        }, idx * INTERVAL);
-    });
+            /* 每個檔案之間暫停 400ms，讓瀏覽器完成儲存動作 */
+            if (idx < total - 1) await sleep(400);
+        }
+    }
+
+    /* ── 全部完成 ── */
+    btnDownload.disabled      = false;
+    btnText.textContent       = '一鍵下載所有勾選檔案';
+    progressWrap.classList.add('hidden');
+    progressBar.style.width   = '0%';
+
+    if (isIOS) {
+        alert(`已開啟 ${total} 個 Drive 預覽分頁。\n請在每個分頁點「⋯ → 下載」即可儲存。`);
+    } else {
+        alert(`✅ 已完成下載 ${total} 個檔案！\n請至「下載」資料夾查看。`);
+    }
+}
+
+/* ── 工具：Promise 版 sleep ── */
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 </script>
 </body>
