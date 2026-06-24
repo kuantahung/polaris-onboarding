@@ -107,12 +107,12 @@
                 <p class="text-[11px] text-slate-500 mb-1">目前下載</p>
                 <p id="step-filename" class="text-sm font-semibold text-white leading-snug"></p>
             </div>
-            <!-- 真實 <a> 標籤，使用者直接點擊 → 瀏覽器視為合法手勢，不封鎖 -->
-            <a id="step-download-btn" href="#" target="_blank"
-               onclick="onStepClick(event)"
+            <!-- button 觸發 fetch→blob 下載，完全不跳頁 -->
+            <button id="step-download-btn" type="button"
+               onclick="onStepClick()"
                class="btn-primary flex items-center justify-center gap-2 w-full text-white font-bold py-4 rounded-xl text-sm text-center shadow-lg mb-3">
-                📥 點此下載這個檔案
-            </a>
+                <span id="step-btn-label">📥 點此下載這個檔案</span>
+            </button>
             <button type="button" onclick="advanceStep(false)"
                 class="w-full text-slate-500 hover:text-slate-300 text-xs py-2 transition-colors">
                 略過，繼續下一個 →
@@ -426,14 +426,6 @@ function extractFileId(url) {
     return m ? m[1] : null;
 }
 
-/* ── 取得直接下載 URL ── */
-function getDownloadUrl(url) {
-    const fileId = extractFileId(url);
-    return fileId
-        ? `https://docs.google.com/uc?export=download&id=${fileId}`
-        : url;
-}
-
 /* ── 確認配置 ── */
 function generatePack() {
     const items = getSelected();
@@ -493,31 +485,84 @@ function showStep(idx) {
     const item  = downloadQueue[idx];
     const total = downloadQueue.length;
 
-    /* 進度 */
-    document.getElementById('step-counter').textContent     = `${idx + 1} / ${total}`;
+    document.getElementById('step-counter').textContent      = `${idx + 1} / ${total}`;
     document.getElementById('step-progress-bar').style.width = `${Math.round(((idx + 1) / total) * 100)}%`;
-    document.getElementById('step-filename').textContent    = item.name;
+    document.getElementById('step-filename').textContent     = item.name;
 
-    /* 設定下載連結 */
-    const dlBtn = document.getElementById('step-download-btn');
-    dlBtn.href = getDownloadUrl(item.url);
+    /* 重置按鈕狀態 */
+    const btn = document.getElementById('step-download-btn');
+    btn.disabled = false;
+    document.getElementById('step-btn-label').textContent = '📥 點此下載這個檔案';
 
-    /* 更新右側清單狀態 */
     const statusEl = document.getElementById(`status-${idx}`);
     if (statusEl) { statusEl.textContent = '⬇ 待點擊'; statusEl.className = 'chip chip-loading'; }
 
     document.getElementById('step-modal').classList.remove('hidden');
 }
 
-/* 使用者點了「📥 點此下載這個檔案」 */
-function onStepClick(e) {
-    /* 讓 <a href target="_blank"> 自然執行（真實使用者手勢，瀏覽器不封鎖） */
-    downloadedCount++;
+/* 使用者點了下載按鈕：fetch → blob → <a download>，完全不跳頁 */
+async function onStepClick() {
+    const item     = downloadQueue[currentStep];
+    const fileId   = extractFileId(item.url);
+    const btn      = document.getElementById('step-download-btn');
+    const label    = document.getElementById('step-btn-label');
     const statusEl = document.getElementById(`status-${currentStep}`);
-    if (statusEl) { statusEl.textContent = '✓ 完成'; statusEl.className = 'chip chip-done'; }
 
-    /* 短暫延遲讓下載觸發後再跳下一個 */
-    setTimeout(() => advanceStep(true), 400);
+    btn.disabled   = true;
+    label.textContent = '⏳ 下載中，請稍候…';
+
+    try {
+        if (fileId) {
+            /* Step 1：取直接下載 URL */
+            let dlUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
+
+            /* Step 2：fetch（Drive 小檔案直接給檔案；大檔案先給 HTML 確認頁） */
+            let res = await fetch(dlUrl, { redirect: 'follow' });
+            const ct = res.headers.get('content-type') || '';
+
+            if (ct.includes('text/html')) {
+                /* 大檔案：解析 confirm token 後再打一次 */
+                const html = await res.text();
+                const m = html.match(/confirm=([0-9A-Za-z_]+)/)
+                       || html.match(/[?&]confirm=([^&"]+)/);
+                if (m) {
+                    dlUrl = `${dlUrl}&confirm=${m[1]}`;
+                    res   = await fetch(dlUrl, { redirect: 'follow' });
+                } else {
+                    /* 無法解析 confirm，fallback: 開 Drive 預覽頁 */
+                    window.open(item.url, '_blank');
+                    throw new Error('no confirm token');
+                }
+            }
+
+            /* Step 3：轉 Blob → 建 object URL → 隱藏 <a download> 點擊 */
+            const blob    = await res.blob();
+            const objUrl  = URL.createObjectURL(blob);
+            const a       = document.createElement('a');
+            a.href        = objUrl;
+            a.download    = item.name + '.pdf';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(objUrl), 10000);
+
+        } else {
+            /* 無法取得 fileId，開新分頁 fallback */
+            window.open(item.url, '_blank');
+        }
+
+        /* 成功 */
+        downloadedCount++;
+        label.textContent = '✅ 已下載！';
+        if (statusEl) { statusEl.textContent = '✓ 完成'; statusEl.className = 'chip chip-done'; }
+        setTimeout(() => advanceStep(true), 800);
+
+    } catch (err) {
+        console.warn('下載錯誤：', err);
+        label.textContent = '⚠ 下載失敗，請重試';
+        btn.disabled = false;
+        if (statusEl) { statusEl.textContent = '⚠ 失敗'; statusEl.className = 'chip'; statusEl.style.cssText = 'background:#431407;color:#fb923c;font-size:10px;padding:2px 8px;border-radius:20px;'; }
+    }
 }
 
 /* 前進到下一步（downloaded = 是否有點下載） */
